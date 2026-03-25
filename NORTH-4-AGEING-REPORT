@@ -1,0 +1,98 @@
+<?php
+require 'PhpSpreadsheet/vendor/autoload.php';
+
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
+$report = [];
+
+if (isset($_FILES['excel'])) {
+    $file = $_FILES['excel']['tmp_name'];
+    $spreadsheet = IOFactory::load($file);
+
+    /* READ GR103 */
+    $gr103Sheet = $spreadsheet->getSheetByName('GR103');
+    $gr103Rows = $gr103Sheet->toArray(null, true, true, true);
+
+    /* READ GR105 */
+    $gr105Sheet = $spreadsheet->getSheetByName('GR105');
+    $gr105Rows = $gr105Sheet->toArray(null, true, true, true);
+
+    /* MAP GR105 BY PO KEY */
+    $gr105Map = [];
+    foreach ($gr105Rows as $i => $row) {
+        if ($i == 1) continue;
+        $poKey = trim($row['L']); // PO KEY column
+        $gr105Map[$poKey] = $row['I']; // Posting Date
+    }
+
+    /* PROCESS GR103 */
+    foreach ($gr103Rows as $i => $row) {
+        if ($i == 1) continue;
+
+        $poKey = trim($row['L']);
+        $gr103Date = strtotime($row['I']);
+        $today = time();
+        $ageing = floor(($today - $gr103Date) / (60 * 60 * 24));
+
+        $gr105Date = $gr105Map[$poKey] ?? '';
+        $status = $gr105Date ? 'CLOSED' : 'OUTSTANDING';
+
+        $report[] = [
+            'po_key' => $poKey,
+            'material' => $row['E'],
+            'gr103_date' => $row['I'],
+            'gr105_date' => $gr105Date ?: '-',
+            'ageing' => $ageing,
+            'status' => $status
+        ];
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GR103–GR105 Ageing Report</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 6px; }
+        th { background: #f2f2f2; }
+        .OUTSTANDING { color: red; font-weight: bold; }
+        .CLOSED { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<h2>GR103–GR105 AGEING REPORT</h2>
+
+<form method="post" enctype="multipart/form-data">
+    <input type="file" name="excel" required>
+    <button type="submit">Generate Report</button>
+</form>
+
+<?php if ($report): ?>
+<table>
+    <tr>
+        <th>PO KEY</th>
+        <th>Material Description</th>
+        <th>GR103 Date</th>
+        <th>GR105 Date</th>
+        <th>Ageing (Days)</th>
+        <th>Status</th>
+    </tr>
+    <?php foreach ($report as $r): ?>
+    <tr>
+        <td><?= $r['po_key'] ?></td>
+        <td><?= $r['material'] ?></td>
+        <td><?= $r['gr103_date'] ?></td>
+        <td><?= $r['gr105_date'] ?></td>
+        <td><?= $r['ageing'] ?></td>
+        <td class="<?= $r['status'] ?>"><?= $r['status'] ?></td>
+    </tr>
+    <?php endforeach; ?>
+</table>
+<?php endif; ?>
+
+</body>
+</html>
